@@ -734,9 +734,77 @@ let activeTraceCaseId = "persimmon";
 let selectedTraceNodeId = "persimmonSupplierB";
 let activeAnalysisCaseId = "persimmon";
 let dashboardData = fallbackData;
+let externalDashboardData = {};
 let overviewChartsInitialized = false;
 let overviewMapInitialized = false;
 let chinaMapReady = false;
+
+function isPlainObject(value) {
+  return Object.prototype.toString.call(value) === "[object Object]";
+}
+
+function hasMeaningfulValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (isPlainObject(value)) return Object.keys(value).length > 0;
+  return value !== undefined && value !== null && value !== "";
+}
+
+function mergeWithFallback(fallbackValue, sourceValue) {
+  if (!hasMeaningfulValue(sourceValue)) return fallbackValue;
+
+  if (Array.isArray(fallbackValue)) {
+    return Array.isArray(sourceValue) && sourceValue.length > 0 ? sourceValue : fallbackValue;
+  }
+
+  if (isPlainObject(fallbackValue)) {
+    if (!isPlainObject(sourceValue)) return fallbackValue;
+    return Object.keys({ ...fallbackValue, ...sourceValue }).reduce((result, key) => {
+      result[key] = mergeWithFallback(fallbackValue[key], sourceValue[key]);
+      return result;
+    }, {});
+  }
+
+  return sourceValue;
+}
+
+function mergeCollectionById(targetCollection, sourceCollection, fallbackFactory) {
+  if (!Array.isArray(sourceCollection) || sourceCollection.length === 0) return;
+
+  sourceCollection.forEach((sourceItem) => {
+    if (!sourceItem || !sourceItem.id) return;
+    const targetIndex = targetCollection.findIndex((item) => item.id === sourceItem.id);
+
+    if (targetIndex >= 0) {
+      targetCollection[targetIndex] = mergeWithFallback(targetCollection[targetIndex], sourceItem);
+      return;
+    }
+
+    targetCollection.push(mergeWithFallback(fallbackFactory(), sourceItem));
+  });
+}
+
+function applyExternalDashboardData(sourceData = {}) {
+  externalDashboardData = isPlainObject(sourceData) ? sourceData : {};
+  const sharedData = mergeWithFallback(fallbackData, externalDashboardData);
+
+  overviewProducts.forEach((product) => {
+    product.data = mergeWithFallback(sharedData, product.data);
+  });
+
+  if (isPlainObject(externalDashboardData.data)) {
+    overviewProducts[0].data = mergeWithFallback(overviewProducts[0].data, externalDashboardData.data);
+  }
+
+  mergeCollectionById(overviewProducts, externalDashboardData.overviewProducts, () => ({
+    id: "",
+    name: "演示产品",
+    short: "动态数据",
+    data: sharedData,
+  }));
+
+  mergeCollectionById(traceCases, externalDashboardData.traceCases, () => traceCases[0]);
+  mergeCollectionById(analysisCases, externalDashboardData.analysisCases, () => analysisCases[0]);
+}
 
 function getOverviewProduct(productId = activeOverviewProductId) {
   return overviewProducts.find((item) => item.id === productId) || overviewProducts[0];
@@ -762,7 +830,7 @@ async function loadDashboardData() {
   try {
     const response = await fetch(`${import.meta.env.BASE_URL}data/dashboard.json`);
     if (!response.ok) return fallbackData;
-    return { ...fallbackData, ...(await response.json()) };
+    return mergeWithFallback(fallbackData, await response.json());
   } catch {
     return fallbackData;
   }
@@ -2098,7 +2166,7 @@ function startClock() {
 
 async function init() {
   fitStage();
-  await loadDashboardData();
+  applyExternalDashboardData(await loadDashboardData());
   setDashboardDataForProduct(activeOverviewProductId);
   renderOverviewModules();
   afterOverviewLayoutUpdate();
@@ -2125,6 +2193,5 @@ window.addEventListener("resize", () => {
 });
 
 init();
-
 
 
