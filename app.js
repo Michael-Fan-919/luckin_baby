@@ -760,7 +760,7 @@ function fitStage() {
 
 async function loadDashboardData() {
   try {
-    const response = await fetch("./data/dashboard.json");
+    const response = await fetch(`${import.meta.env.BASE_URL}data/dashboard.json`);
     if (!response.ok) return fallbackData;
     return { ...fallbackData, ...(await response.json()) };
   } catch {
@@ -769,7 +769,7 @@ async function loadDashboardData() {
 }
 
 async function loadChinaGeoJson() {
-  const response = await fetch("./data/china.json");
+  const response = await fetch(`${import.meta.env.BASE_URL}data/china.json`);
   if (!response.ok) throw new Error("China map geojson failed to load");
   return response.json();
 }
